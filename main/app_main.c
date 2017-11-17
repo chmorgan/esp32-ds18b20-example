@@ -41,30 +41,35 @@
 #define DS18B20_RESOLUTION   (DS18B20_RESOLUTION_12_BIT)
 #define SAMPLE_PERIOD        (1000)   // milliseconds
 
+OneWireBus *owb;
+owb_rmt_driver_info rmt_driver_info;
+
 void app_main()
 {
-    esp_log_level_set("*", ESP_LOG_INFO);
+//    esp_log_level_set("*", ESP_LOG_INFO);
+
+    printf("Initializing in 2 seconds\n");
 
     // Stable readings require a brief period before communication
-    vTaskDelay(1000.0 / portTICK_PERIOD_MS);
+    vTaskDelay(2000.0 / portTICK_PERIOD_MS);
 
     // Create a 1-Wire bus
-#ifdef USE_STATIC
-    OneWireBus owb_static;        // static allocation
-    OneWireBus * owb = &owb_static;
-#else
-    OneWireBus * owb = owb_malloc();     // heap allocation
-#endif
+    rmt_channel_t tx_channel = RMT_CHANNEL_1;
+    rmt_channel_t rx_channel = RMT_CHANNEL_0;
+    int gpio_num = 26;
+    owb = owb_rmt_initialize( &rmt_driver_info, gpio_num,
+                            tx_channel, rx_channel);
 
-    owb_init(owb, GPIO_DS18B20_0);
     owb_use_crc(owb, true);              // enable CRC check for ROM code
 
+#if 1
     // Find all connected devices
     printf("Find devices:\n");
     OneWireBus_ROMCode device_rom_codes[MAX_DEVICES] = {0};
     int num_devices = 0;
     OneWireBus_SearchState search_state = {0};
-    bool found = owb_search_first(owb, &search_state);
+    bool found;
+    owb_search_first(owb, &search_state, &found);
     while (found)
     {
         char rom_code_s[17];
@@ -72,7 +77,7 @@ void app_main()
         printf("  %d : %s\n", num_devices, rom_code_s);
         device_rom_codes[num_devices] = search_state.rom_code;
         ++num_devices;
-        found = owb_search_next(owb, &search_state);
+        owb_search_next(owb, &search_state, &found);
     }
 
     printf("Found %d devices\n", num_devices);
@@ -90,7 +95,9 @@ void app_main()
     };
     char rom_code_s[17];
     owb_string_from_rom_code(known_device, rom_code_s, sizeof(rom_code_s));
-    printf("Device %s is %s\n", rom_code_s, owb_verify_rom(owb, known_device) ? "present" : "not present");
+    bool is_present;
+    owb_verify_rom(owb, known_device, &is_present);
+    printf("Device %s is %s\n", rom_code_s, is_present ? "present" : "not present");
 
     // Create a DS18B20 device on the 1-Wire bus
 #ifdef USE_STATIC
@@ -186,11 +193,13 @@ void app_main()
     {
         ds18b20_free(&devices[i]);
     }
-    owb_free(&owb);
 #endif
 
+#if 0
     printf("Restarting now.\n");
     fflush(stdout);
     vTaskDelay(1000 / portTICK_PERIOD_MS);
     esp_restart();
+#endif
+#endif
 }
